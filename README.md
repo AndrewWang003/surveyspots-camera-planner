@@ -6,38 +6,40 @@ A Chrome extension and spatial backend that suggest where to install traffic-sur
 
 ## The problem
 
-I install traffic-survey cameras in the field. Before each survey, every camera position is planned and marked on a Google My Maps map for the field team.
+Before each traffic survey, a planner decides where every camera and counting device goes. For each new project they:
 
-Many sites have been surveyed before, and the old maps already show camera positions that worked in practice. But that knowledge is hard to reuse:
+1. set the survey sites (usually intersections);
+2. look at each site in Google Street View to find somewhere a camera can actually be mounted, such as a pole or a sign;
+3. mark every camera position on a Google My Maps map and write notes;
+4. send the map to the field team who install the equipment.
 
-- it is spread across many separate project maps;
-- layers are named inconsistently (`IC`, `Cams`, `cam locations`, `Task 1- IC` ...);
-- camera points are mixed with other things on the same map: driver routes, tube counters, coverage areas, queue-length tasks;
-- different survey types need different cameras and must not be mixed up.
+Step 2 is slow, and it is repeated for sites the company has already surveyed many times.
 
-So planning each new job means searching old maps by hand, or starting again.
+## The idea
+
+The company's old project maps already contain camera positions that were checked and used in the field. Street View updates slowly, and the poles and signs that cameras are mounted on rarely change on Australian streets. So **a position that worked before is usually still the best place to start.**
+
+With SurveySpots, the planner only marks the sites. The tool looks up the historical maps and places the most reliable camera positions for each site, by device type. The planner then reviews and adjusts the result instead of making every decision from scratch.
 
 ## How I approached it
 
-The main idea: **treat old survey maps as evidence, and only suggest positions that have really been used.**
-
-1. **Reuse real positions, never invent them.** My first version tried to learn camera offsets and predict new positions. I dropped it. A predicted point can land somewhere you cannot install a camera. Now every suggested camera is an exact historical coordinate; when evidence is missing, the site is flagged for review instead of guessed.
-2. **Keep raw evidence unchanged.** Uploaded KML/KMZ files are stored byte-for-byte. Everything derived from them (sites, cameras, directions, clusters) is versioned, so when the parser improves, the data can be rebuilt without asking anyone to upload again. Human decisions are never overwritten by a rebuild.
-3. **A person reviews messy input before it becomes history.** Each upload is previewed first. The user confirms which layers count as historical evidence and what type they are. Nothing is written to the database until that review is confirmed.
-4. **Separate the distance rules.** One radius was not enough. Field testing showed 25 m was too tight and 250 m too broad. The system now uses separate rules: 75 m to match a new site to a historical site, 25 m to recognise the same site across different surveys, and 1.5 m to treat two camera points as the same physical position.
-5. **Pick one coherent layout, not a union.** If a site was surveyed three times with slightly different setups, merging them would produce too many cameras. Each project gets one vote (latest revision wins), the most common camera count wins, and the output is one complete historical layout.
-6. **Respect survey types.** Intersection-count cameras are only used for intersection sites; origin-destination layouts can share positions with each other; tube-counter (ATC) data is kept but never used for cameras.
-7. **Keep it simple where the platform is fixed.** Google My Maps has no clean official export API, so the workflow uses manual KML/KMZ export rather than scraping private endpoints.
-
-Every decision keeps its reasons and rule version, so a future AI-assisted review step can be added without losing the audit trail.
+1. **Reuse real positions, never invent them.** My first version tried to learn camera offsets from history and predict new positions. I dropped it: a predicted point can land where nothing can be mounted. Every suggested camera is now an exact historical coordinate. When evidence is missing, the site is flagged for review instead of guessed.
+2. **Rank by evidence, and make the ranking explainable.** Candidates are ranked first by evidence tier (the site's own history, then a fallback, then a nearby compatible site), then by how often a layout was used across projects, then by a score: relationship confidence 70%, distance to the site 25%, number of historical observations 5%. Each choice keeps its reasons, so a planner can see why a position was picked.
+3. **Keep device types apart.** Old maps mix intersection-count cameras, origin-destination cameras, HIK cameras, tube counters (ATC), driver routes and coverage areas. Each layer is classified by type, and only compatible history is used: intersection cameras for intersection sites, origin-destination layouts can share positions, and ATC data is never used for cameras.
+4. **Pick one coherent layout, not a union.** If a site was surveyed three times with slightly different setups, merging them gives too many cameras. Each project gets one vote (its latest revision), the most common camera count wins, and the output is one complete historical layout.
+5. **Separate the distance rules.** Field testing showed one radius was not enough (25 m too tight, 250 m too broad). The tool uses 75 m to match a new site to a historical site, 25 m to recognise the same site across surveys, and 1.5 m to treat two camera points as the same physical position.
+6. **A person reviews messy input before it becomes history.** Old maps are named inconsistently (`IC`, `Cams`, `cam locations`, `Task 1- IC` ...). Each upload is previewed, and the user confirms which layers are historical evidence and what type they are. Nothing is written until that review is confirmed.
+7. **Keep raw evidence unchanged.** Uploaded files are stored byte-for-byte; everything derived from them is versioned and can be rebuilt when the parser improves. Human decisions are never overwritten by a rebuild.
 
 ## What it does
 
-1. The planner drops site pins for a new job in Google My Maps and exports the map.
-2. The extension uploads it. The backend matches each pin to historical sites and selects camera positions.
-3. The planner downloads a KMZ with camera points and facing lines and imports it back into My Maps, with a quality summary of which sites were complete, partial or need review.
+1. The planner marks the survey sites in Google My Maps (one layer per survey type) and exports the map.
+2. The extension uploads it. The backend matches each site to historical sites and selects camera positions by device type.
+3. The planner downloads a KMZ with camera points and facing lines, imports it into My Maps, then checks and adjusts it before sending it to the field team. A quality summary shows which sites were complete, partial or need review.
 
 Tested against a private corpus of real historical surveys (about 170 sites and 180 camera positions).
+
+**Not done yet:** tube-counter (ATC) positions are imported and kept, but not generated yet. The ranking reasons are stored but not yet shown on each camera in the exported map.
 
 ## Built with
 
