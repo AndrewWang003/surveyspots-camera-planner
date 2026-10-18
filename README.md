@@ -19,6 +19,8 @@ SurveySpots targets that repeated work. It is not designed to plan sites that ha
 
 ## The idea
 
+I noticed this while working as a field installer, and built SurveySpots in my own time to make the work faster and more consistent.
+
 The company's old project maps already contain camera positions that were checked and used in the field. Street View updates slowly, and the poles and signs that cameras are mounted on rarely change on Australian streets. So **a position that worked before is usually still the best place to start.**
 
 With SurveySpots, the planner only marks the sites. The tool looks up the historical maps and places the most reliable camera positions for each site, by device type. The planner then reviews and adjusts the result instead of making every decision from scratch.
