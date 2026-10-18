@@ -15,6 +15,8 @@ Before each traffic survey, a planner decides where every camera and counting de
 
 Step 2 is slow, and it is repeated for sites the company has already surveyed many times.
 
+SurveySpots targets that repeated work. It is not designed to plan sites that have never been surveyed: with no history, it flags the site for manual planning instead of guessing.
+
 ## The idea
 
 The company's old project maps already contain camera positions that were checked and used in the field. Street View updates slowly, and the poles and signs that cameras are mounted on rarely change on Australian streets. So **a position that worked before is usually still the best place to start.**
