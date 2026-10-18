@@ -1,0 +1,425 @@
+> Names of real survey projects and places have been removed from this public copy of the log.
+
+# Smart Traffic Survey Deployment Assistant - Development Log
+
+## Project Goal
+Develop a closed-loop system consisting of a Chrome Extension and a Spatial Backend API to help plan traffic survey camera deployments by leveraging historical Google My Maps installation data.
+
+## Phase 1: Planning and Scaffolding [COMPLETED]
+- [x] Gathered requirements for MV3 extension without Canvas injection.
+- [x] Defined PostGIS architecture using ST_ClusterDBSCAN.
+- [x] Mapped KML parsing logic for extracting equipment types and azimuths.
+- [x] Established file structure and scaffolding (`.gitignore`, `README.md`).
+
+## Phase 2: Implementation [COMPLETED]
+- [x] **Chrome Extension (MV3)**
+  - `manifest.json`: Configuration mapping matching V3 requirements.
+  - `config.js`: Defined API base and Google Maps URL regex strings.
+  - `background.js`: Implemented the service worker handling coordinate extraction across multiple URL schemas (Maps, MyMaps, Protobuf), and fetching/uploading KMLs via API.
+  - `popup.html`, `popup.css`, `popup.js`: User Interface designed avoiding inline scripts for CSP compliance. Added domain whitelist checking and OAuth integration using `chrome.identity`.
+- [x] **Backend API (FastAPI + PostGIS)**
+  - `init.sql`: Structured database incorporating spatial indexes and the core `ST_ClusterDBSCAN` clustering logic.
+  - `config.py`, `database.py`: Pydantic settings loading and asyncpg connection pooling.
+  - `models.py`: Built rigorous data types mapping Pydantic to our KML definitions.
+  - `auth.py`: Implemented Google OAuth verification.
+  - `kml_generator.py`: Output formatter producing the custom `IconStyle` formatting and heading data from our schema into KML format for MyMaps import.
+  - `kml_parser.py`: Ingestion mechanism interpreting uploaded completed survey KMLs.
+  - `routes/kml_routes.py`, `main.py`: Connected the endpoints together.
+
+## Phase 3: Verification & Dependencies [COMPLETED]
+- [x] Setup Python virtual environment (`.venv`).
+- [x] Installed dependencies from `requirements.txt` (`fastapi`, `asyncpg`, `uvicorn`, `lxml`, `shapely`, etc.).
+- [x] Validated syntax for all Python backend files.
+- [x] Validated extension structure against Manifest V3 guidelines.
+
+## Phase 4: Development Refinement & Bug Fixes [COMPLETED]
+- [x] Implemented "Dev Mode" to bypass Google OAuth verification in both the backend (`auth.py`) and Chrome extension (`background.js`) to allow rapid testing without GCP Client IDs.
+- [x] Created `start.sh` wrapper script to boot the PostgreSQL database via Docker and the FastAPI backend concurrently.
+- [x] Fixed an issue on Apple Silicon (M1/M2/M3) causing Docker platform mismatches by forcing `--platform linux/amd64` for the PostGIS image.
+- [x] **Chrome Extension Fixes:**
+  - Fixed a CSS bug where `display: flex` on `.loading-overlay` and `.auth-authenticated` overrode the HTML `hidden` attribute, causing all popup layers to stack and the loading spinner to spin infinitely. Fixed by enforcing `[hidden] { display: none !important; }`.
+  - Fixed a fatal `DOWNLOAD_KML` error where `URL.createObjectURL(blob)` was called in the background service worker (not supported in MV3). Refactored download logic to pass raw text from the background script to the popup script, which successfully generates the Blob and triggers the download via `chrome.downloads.download()`.
+
+## Phase 5: Pipeline Completion & Algorithmic Shift [COMPLETED]
+- [x] **Backend Parser Fix:** Fixed a critical bug in `database.py` where `insert_survey_points` incorrectly attempted to read Pydantic models as dictionaries.
+- [x] **KML Schema Compliance:** Reordered KML generation so `<ExtendedData>` properly precedes `<Point>` geometries to strictly satisfy Google My Maps parsing requirements.
+- [x] **Zone Default Icons:** Added a default red-square icon fallback for `EquipmentType.ZONE` to ensure My Maps renders them correctly instead of rejecting point-geometry polygons.
+- [x] **Dynamic Search Radius:** Expanded the spatial DB clustering radius to 8km to support larger area mapping.
+- [x] **Extension URL Decoding:** Added `decodeURIComponent` to `background.js` coordinate extractor to handle encoded commas (`%2C`) generated dynamically by Google My Maps, fixing the disabled Download button.
+
+## Next Steps
+1. **Data Cleaning:** Process and sanitize historical KML files to ensure high-quality training data for the prediction algorithm.
+2. **Algorithmic Generation Engine:** Shift from simple database viewing to an automated KML generator. The algorithm will learn relative spatial offsets (distance and azimuth) from the training data, so when a user marks a "Site Icon" (center of intersection), the system automatically calculates and generates the optimal camera layouts and facing lines.
+
+## Phase 6: Predictive Layout Learning [PLANNED]
+- [ ] Define the training-data contract for historical completed KML files, especially how to identify the Site Icon / intersection center.
+- [x] Build an analyzer that converts each completed survey into relative camera offsets from the Site Icon: distance, bearing, equipment type, and camera heading.
+  - Added `backend/app/training_exporter.py` and `backend/tools/export_training_rows.py`.
+  - Exported de-duplicated review data to `ai_handoff/training_rows.csv` and `ai_handoff/training_summary.json`.
+  - Inferred camera headings from nearby KML facing `LineString` geometry because the uploaded KMLs do not use `<heading>`.
+- [ ] Cluster repeated relative offsets into reusable camera layout templates with support/confidence counts.
+- [ ] Generate new KML layouts by applying the best learned template to a newly marked Site Icon.
+- [ ] Later improvement: infer road/intersection orientation and rotate learned templates into the local road frame.
+
+## Phase 7: Site-Pinned Historical Cleaning MVP [IN PROGRESS]
+- [x] Replaced the earlier predictive-template MVP direction with a safer site-driven historical cleaning workflow:
+  - User exports a My Maps file containing dropped site pins.
+  - Extension uploads that pinned-site KML/KMZ to the backend.
+  - Backend extracts exact Point placemarks as site coordinates.
+  - Backend queries historical IC camera records within the configured site radius and outputs exact historical camera coordinates only.
+- [x] Added `POST /api/v1/pinned-map-reference-kml` for pinned-site processing.
+- [x] Added popup workflow buttons:
+  - `Upload Pinned Site Map`
+  - `Download Processed KMZ`
+  - Renamed training import to `Upload History KML` to avoid user confusion.
+- [x] Set the MVP site search radius to 50m (`CORE_RADIUS_M=50.0`, `FADE_RADIUS_M=50.0`) after field testing showed 25m was too tight while 250m was too broad.
+- [x] Packaged generated output as KMZ so custom icons travel with the file when imported into My Maps.
+- [x] Switched generated IC camera markers to the user-provided white camera icon from `extension/icon/cameraWhite.ico`, converted to bundled PNG assets under `backend/app/assets/`.
+- [x] Reused the user-provided camera icon as the Chrome extension icon by generating Manifest V3 PNG sizes (`16`, `32`, `48`, `128`, `256`, `512`) from the original high-resolution source and scaling the artwork to fill the full icon canvas.
+- [x] Fixed camera icon visual drift by using centered KML hotSpot anchoring instead of the old pin-marker anchor.
+- [x] Upgraded generated camera icon packaging to `cameraWhite-64.png` with fraction-based center anchoring for sharper rendering while keeping the coordinate attached to the icon center.
+- [x] Improved popup error messages so failures appear in a readable status panel instead of overlaying buttons.
+- [x] Confirmed current KML layer handling:
+  - Parser reads Folder/layer ancestry into `source_group`.
+  - Parser infers `layout_family` from layer/folder/placemark names such as `IC`, `OD`, `intersection`, `origin`, and `destination`.
+  - History upload currently imports only parsed IC records (`layout_family == "ic"`), so clearly named OD layers should be ignored.
+  - Ambiguous layer names like `camera locations` may still need user discipline or future UI selection because they do not reliably identify IC vs OD.
+- [x] Operational recommendation for historical uploads:
+  - Prefer exporting/downloading only the relevant IC layer from My Maps when possible.
+  - This reduces parser ambiguity and avoids mixed IC/OD/team-layer noise in the training database.
+- [x] My Maps automation/API decision:
+  - Official My Maps workflow still centers on manual KML/KMZ export from the UI.
+  - Google Data Portability can export My Maps data as KMZ, but it is not a simple per-map/per-layer download API for this MVP workflow.
+  - No clean official Google My Maps API was identified for automatic export of a specific user map layer.
+  - Avoid unofficial/private endpoint scraping for MVP because it is brittle; revisit later only if manual export becomes the bottleneck.
+- [x] Implemented layer-selection/review UI after upload so the backend shows detected layer names (`source_group`) and lets the user choose which layer(s) should be imported and classify them as IC, OD, or HIK.
+- [x] Updated human-reviewed layer family rules for the active parser version:
+  - `Queue Length` and `Task 2- Queue Length` are IC-side queue tasks for this MVP.
+  - `Task 4- Pedestrian Movements` and `Bicycle Counts` are IC-side site/camera evidence.
+  - `Task 1- IC` and `Task 3- IC` remain IC.
+  - `OD Cameras (Blue)` and `OD- <highway name> (...)` remain OD and are excluded from IC output.
+  - `Route 1`, `Route 2`, and `Route 3` are driver routes and are not imported as IC cameras.
+  - `test.kml` and one school-site survey KMZ currently parse with no usable placemarks in stored uploads and can be ignored for now.
+- [x] Added dynamic nearest-site camera classification:
+  - Generic camera layers such as `cam locations`, `Cams`, and `Cam locations` no longer need their own IC/OD label.
+  - Camera-like placemarks whose layer/name does not clearly say IC or OD are assigned to the nearest IC/OD site marker in the same uploaded file.
+  - This preserves clear OD layers such as `OD Cameras (Blue)` while recovering IC camera markers from separate camera-location layers.
+  - Parser version `ic-v4-nearest-site-camera-2026-07-10` rebuilt 315 active IC rows from the stored uploads, including 157 IC camera rows.
+- [x] Added explicit camera-to-site relationship storage and site-first generation lookup:
+  - Parsed camera rows now store the nearest site marker name, site layer, site coordinate, and camera-to-site distance.
+  - Generated output now matches user pins to historical site markers first, then returns cameras linked to those sites; older rows without site links still fall back to direct camera-radius matching.
+  - Same-location camera clustering now uses 1.5m (`DBSCAN_EPS_METERS=1.5`) and outputs the newest exact historical coordinate inside that 1.5m location cluster.
+  - Parser version `ic-v5-site-linked-newest-2026-07-10` rebuilt 315 active IC rows; 155 of 157 IC camera rows have stored site links.
+- [x] Fixed pinned-map output dropping valid site-linked cameras:
+  - Root cause: the DB query could return cameras linked to a matched site even when the camera itself was more than 50m from the user pin, but the KML generator still filtered those far linked cameras out.
+  - Pinned-map generation now includes all cameras returned for a matched site; cameras outside the core display radius are styled as fade rather than discarded.
+  - Added `SITE_MATCH_RADIUS_M=75.0` for pinned-site matching, while keeping same-location clustering at 1.5m.
+  - The first distance/filter fix produced 7 cameras for both recent test maps; the later coherent-layout rule below correctly reduced the second map to 4 total because one site had two alternative three-camera surveys, not six simultaneous cameras.
+- [x] Stabilized historical upload evidence and camera-count selection:
+  - Original KML/KMZ bytes remain stored so parser improvements can rebuild derived rows without asking users to upload files again.
+  - Exact byte-for-byte repeat uploads now reuse the existing content identity and do not become additional historical evidence.
+  - Derived camera rows now keep the original raw-upload time during rebuilds; rebuilding the parser no longer makes old surveys appear newly collected.
+  - Separated three distance rules: 75m matches a user pin to a historical site, 25m recognizes the same physical site across different survey files, and linked cameras may be farther from their site (current verified data reaches about 199m).
+  - Historical surveys now vote, with recency decay, on the expected camera count for a site. A single new layout influences the vote but does not immediately overturn a stronger repeated count.
+  - Output cameras now come from one complete exact historical layout with the winning count. The generator no longer unions incompatible layouts from different surveys.
+  - Verification: `icons of map (1).kml` returns per-pin counts `4, 1, 2, 0, 0` (7 total); `icons of map (2).kml` returns `0, 1, 3` (4 total). A synthetic `2, 2, 3` layout-history test correctly selected 2 cameras.
+- [x] Added a generated-KML default map view so processed pinned-map KMZ output opens around the center of the uploaded project site pins instead of an arbitrary location.
+- [ ] Re-add camera facing line output after camera locations and icon behavior are confirmed stable.
+
+## Phase 8: Normalized Historical Ingestion [IN PROGRESS]
+- [x] Documented repository-wide English-language requirements and AI-extensibility guardrails in `AGENTS.md`; customer-provided KML/KMZ remains unchanged as source evidence.
+- [x] Added a versioned raw Placemark preservation layer before business classification:
+  - Stores Folder ancestry, Placemark name/description, style reference and resolved style evidence.
+  - Stores ExtendedData, every geometry type, normalized coordinate sequences, raw coordinate text, and the raw Placemark XML fragment.
+  - Keeps the original KML/KMZ bytes in `raw_uploads` as the authoritative lossless source.
+  - Persists raw Placemark rows idempotently by upload identity, source index, and raw parser version.
+  - Runs for preview uploads, legacy uploads, batch uploads, and the bulk-ingest script without changing current generated-camera behavior.
+- [x] Confirmed from 179 three-point historical LineStrings that source order does not consistently encode left versus right. Direction geometry will use `boundary_a -> camera_anchor -> boundary_b`, with Point 2 as the camera anchor and circular calculations for suggested facing direction.
+- [x] Added versioned business-role classification decisions and explicit `X cameras` Site requirements without reclassifying the Site as a Camera.
+- [x] Added versioned, context-aware business classification suggestions:
+  - Classifies `site`, `camera_location`, `camera_direction`, `route`, `reference_point`, `unknown`, and `ignored_historical_polygon` roles.
+  - Uses Source file, complete Folder path, group composition, Placemark name, geometry, and explicit Camera quantity evidence; Style/Icon remains supporting evidence rather than a hard role rule.
+  - Stores task family, confidence, reasons, method, status, and rule version without overwriting future human-confirmed decisions.
+  - Reserves `model_version` and structured `decision_metadata` provenance for future AI-assisted classification and result-review workflows.
+- [x] Extracts descriptions such as `2 cameras` into `required_camera_count=2` and `camera_count_source=explicit_description`; these descriptions no longer cause a Site Point to be classified as a Camera.
+- [x] Classifies Route Folder content as `route` metadata while keeping it outside the current Camera generation goal.
+- [x] Reuses the same normalized ingestion service for previews, uploads, bulk ingestion, and stored-history rebuilds so existing raw uploads can be backfilled without re-uploading files.
+- [x] Advanced derived history parsing to `ic-v6-site-count-context-2026-07-16` so corrected Site/Camera roles cannot be mixed with older `ic-v5` rows; stored uploads can be rebuilt through `history_admin.py rebuild-current-parser`.
+- [x] Added versioned Camera and Direction Line observation layers:
+  - Preserves every source LineString position unchanged and uses Point 2 as the Camera anchor only for standard three-point Direction Lines.
+  - Names Point 1 and Point 3 `boundary_a` and `boundary_b`; source order does not claim left/right semantics.
+  - Calculates boundary bearings, a circular centre bearing, and the smallest circular coverage angle, including north-facing wraparound and south-facing cases.
+  - Marks non-three-point Direction Lines for review instead of forcing them into the standard geometry rule.
+- [x] Added deterministic Camera-to-Direction binding suggestions:
+  - Searches Camera Points in the same source Folder and binds the nearest Camera to Point 2 automatically at up to 2 metres.
+  - Keeps candidates from 2 to 4 metres, close ambiguities, unmatched lines, and nonstandard geometry available for review.
+  - Stores automatic and review suggestions separately from future human-confirmed or human-rejected decisions so reprocessing cannot overwrite human work.
+  - Persists Camera Points, original Direction Lines, derived advisory direction metadata, confidence, reasons, and normalization version with PostGIS indexes.
+- [x] Integrated observation building into the shared normalized ingestion service used by previews, uploads, bulk imports, and stored-history rebuilds.
+- [x] Verified the current historical KML corpus produces 174 Camera observations and 182 Direction Line observations: 178 automatic bindings, 1 distance review candidate, and 3 nonstandard lines requiring review.
+- [x] Added versioned Site observations and explainable many-to-many Camera-to-Site relationships:
+  - Extracts namespaced Site identities such as `site:4.5`, `station:12a`, and `ic:29` without confusing Camera numbers for Site references.
+  - Uses every explicit Site reference in a Camera name; the nearest explicitly named Site is `primary` and the other explicitly named Sites are `fallback`.
+  - Uses the nearest task-compatible Site within 250 metres as `primary` when the Camera name has no explicit Site reference.
+  - Keeps Route records outside relationship construction.
+  - Stores relationship role, distance, evidence method, confidence, reasons, review status, and association version.
+  - Reprocessing refreshes only rule-generated `suggested` relationships and preserves future human-confirmed or human-rejected records.
+- [x] Verified the current historical KML corpus produces one primary Site relationship for all 174 Camera observations, 8 additional fallback relationships, and no unresolved explicit Site references.
+- [x] Confirmed the documented `Cam 5- for Sites 4.4, 4.5 & 5` example selects Site 4.5 as primary and Sites 4.4 and 5 as fallback.
+- [x] Removed cross-task fallback from automatic Camera-to-Site association:
+  - A Camera with no task-compatible Site is no longer compared with every Site in the source file.
+  - Missing Site candidates, incompatible task families, unmatched explicit references, and nearest compatible Sites beyond 250 metres create versioned review items instead of forced relationships.
+  - Review items retain code, reasons, explicit references, candidate Site/distance where available, status, source linkage, and association version.
+  - Reprocessing refreshes only open rule-generated review items and preserves human-resolved or human-dismissed records.
+- [x] Enforced raw-upload content identity at the database boundary:
+  - Audited the active database before migration: 9 raw uploads, 9 unique SHA-256 hashes, and no duplicates requiring reconciliation.
+  - Added a unique database index on `raw_uploads.content_hash` so direct SQL, scripts, and other clients cannot insert byte-identical source evidence twice.
+  - Retained the application advisory lock and canonical lookup so concurrent normal uploads return the existing raw-upload UUID without relying on a constraint error.
+  - Applied and verified the targeted unique-index migration on the active local PostGIS database without running seed data or unrelated schema changes.
+- [x] Added deterministic non-chain Camera Location Clusters:
+  - Uses complete-link clustering with a 1.5-metre maximum cluster diameter, so every pair of Camera observations in a Cluster must be within the threshold.
+  - Prevents transitive chaining where A is near B and B is near C but A is too far from C.
+  - Selects a medoid from the actual historical Camera observations as the representative coordinate; it never generates a synthetic averaged location.
+  - Generates a stable SHA-256 cluster key from the cluster version and sorted Camera observation UUIDs.
+  - Stores versioned Cluster rows and one membership row per Camera observation, including representative status and distance to the representative.
+  - Rebuilds rule-generated Clusters under a database advisory lock after normalized ingestion while preserving members assigned by future human-confirmed or human-rejected Cluster decisions.
+- [x] Verified complete-link behavior with a synthetic A-B-C chain, input-order independence, and historical-coordinate representative selection.
+- [x] Analysed the current historical KML corpus at 1.5 metres: 174 Camera observations produce 174 singleton Clusters.
+- [x] Added versioned Site Camera-count decisions with explicit requirements taking precedence over history:
+  - Uses `required_camera_count` from the Site description immediately when present, with `camera_count_source=explicit_description`.
+  - Otherwise counts distinct primary Camera Location Clusters in equivalent historical Site layouts and selects the statistical mode.
+  - Excludes fallback Camera relationships from historical required-count votes.
+  - Treats the target layout as evidence but prevents separate nearby Sites in the same raw upload from voting for each other.
+  - Allows task-compatible Site layouts from different raw uploads within 25 metres to vote until Canonical Site handling is introduced.
+  - Resolves equal-frequency modes by the newest supporting layout and then the smaller Camera count.
+  - Produces `insufficient_history` with `requires_review=true` instead of guessing when neither an explicit requirement nor a historical primary layout exists.
+  - Stores method, version, confidence, reasons, supporting Site observation IDs, complete count votes, status, and source references without overwriting human-confirmed decisions.
+- [x] Current historical-corpus analysis across 164 Site observations: 29 explicit-description decisions, 94 historical-mode decisions, and 41 insufficient-history review decisions.
+- [x] Added a versioned tiered Camera generation selector for normalized historical Sites:
+  - Selects de-duplicated Camera Location Clusters in strict `primary`, `fallback`, then `nearby_historical` order.
+  - A stronger tier always wins when the same location Cluster appears through multiple evidence paths.
+  - Ranks candidates within a tier by confidence, distance to Site, and stable identifiers.
+  - Limits nearby historical candidates to task-compatible Clusters within 50 metres.
+  - Writes an English Site description note with the exact reliable-location shortage when fewer than the required count can be selected.
+  - Refuses generation when the required Camera count still requires review.
+  - Stores generation status, reasons, required/selected/missing counts, version, review state, and every selected Cluster with tier, rank, confidence, distance, representative historical Camera, and source relationship.
+  - Preserves future human-confirmed or human-rejected generation results during automatic rebuilds.
+- [x] Current historical-corpus generation analysis across 164 Sites: 99 complete results, 24 partial results, and 41 count-review results; selected evidence currently includes 173 primary and 8 nearby historical locations.
+- [x] Kept normalized generation suggestions separate from the existing user-pin KML output until Canonical Site matching is implemented.
+- [x] Added `testfixtures/CLtest.kml` as a non-historical Polygon and generated-output fixture without translating or rewriting its source content:
+  - The fixture is outside the historical `testdata` root and is excluded from Site, Camera, count-voting, Canonical Site, Cluster, and generation corpus statistics.
+  - Audited the active database and confirmed there were no `CLtest` rows in `raw_uploads`, `survey_history`, or `import_batches` requiring deletion.
+- [x] Advanced raw parsing to `raw-v2-polygon-evidence-2026-07-16`:
+  - Resolves a Placemark StyleMap to its normal Style while preserving both raw XML definitions.
+  - Preserves icon/line/Polygon colors, line width, Polygon fill/outline settings, and the resolved Style ID.
+  - Labels Polygon coordinate sets as outer or inner boundaries for future Polygon holes.
+  - Confirmed that My Maps exports the open sample line with 3 persisted coordinates; visible undragged midpoint handles are not additional KML vertices.
+  - Confirmed that the sample Polygon exports 14 coordinate records: 13 distinct vertices plus the repeated starting coordinate that closes the LinearRing.
+- [x] Improved contextual classification for drawing-tool evidence:
+  - Generic Points in an explicitly named Site Folder classify as Sites even when the Folder also contains advisory line geometry.
+  - A three-point LineString in a Site Folder is preserved as an advisory Camera Direction with Point 2 as its anchor and binding review required when no Camera Point is nearby.
+- [x] Added versioned Polygon Site-scope classification and membership:
+  - Accepts only valid KML Polygon geometry with a closed outer ring and at least 3 distinct vertices.
+  - Uses task-compatible Point-in-Polygon or boundary containment as the automatic Site-scope rule.
+  - Allows one Polygon scope to contain multiple independent Sites and stores one membership per contained Site.
+  - A valid Polygon containing no Site becomes `unbound_review`; invalid Polygon geometry becomes `invalid_geometry_review`.
+  - Polygon style is retained as evidence but does not independently establish Site scope.
+  - The sample Polygon is valid but contains no Site or Camera Point, so it correctly remains an unbound review candidate.
+- [x] Added deterministic non-chain Canonical Sites and memberships:
+  - Merges Site observations only across distinct raw uploads when task families are compatible and every pair is within 25 metres.
+  - Never merges separate Sites from the same raw upload, even when they are very close.
+  - Uses complete-link matching to prevent transitive A-B-C Site chaining.
+  - Uses an actual historical Site observation as the representative location and a stable versioned SHA-256 key for Canonical identity.
+  - Keeps Polygon scope membership separate from Canonical matching; sharing a Polygon does not merge Sites.
+  - Derives de-duplicated Polygon-to-Canonical-Site memberships from accepted Polygon-to-Site-observation memberships.
+  - Updates historical Camera-count voting to use Canonical Site membership rather than repeating an independent radius match.
+- [x] Current historical-corpus Canonical analysis: 164 Site observations produce 161 Canonical Sites; 3 Canonical Sites contain 2 cross-upload observations and the maximum multi-member diameter is 17.35 metres.
+- [x] Enforced the existing Extension upload workflow boundary without adding a new source-purpose model:
+  - `pinned-map-reference-kml` remains a read-only generation request that parses user pins and returns processed KMZ without storing Raw Upload, Site, Camera, Canonical, count, or generation evidence.
+  - `preview-upload` now keeps source bytes, extracted KML, and parsed points only in the expiring in-memory preview cache.
+  - Raw Upload, normalized evidence, and legacy history rows are written only after the user confirms at least one historical layer through `confirm-upload`.
+  - Cancelled, expired, or confirmed-with-no-selection previews leave no historical database records.
+- [x] Made normalized generation evidence rebuild-safe at the database level:
+  - Derived generation results cascade when their Camera-count decision is replaced.
+  - Derived generation selections cascade when their Camera Cluster, representative Camera observation, or source Camera-to-Site relationship is replaced.
+  - This preserves immutable raw evidence and human decisions while allowing versioned rule-generated layers to rebuild without stale foreign-key references.
+- [x] Removed database side effects from legacy test-script imports:
+  - Wrapped legacy async script entry points in `if __name__ == "__main__"` so `unittest discover` no longer queries, generates output from, deletes, or inserts active database rows merely by importing test modules.
+  - Restored the affected historical file through the confirmed raw-upload rebuild path after identifying the test-created rows by their missing Raw Upload identity.
+- [x] Migrated and rebuilt the active local PostGIS historical database:
+  - Created a pre-migration custom-format database backup inside the PostGIS container.
+  - Applied all normalized tables, foreign keys, review states, and spatial indexes through the application schema initializer without running seed inserts.
+  - Rebuilt all 9 confirmed Raw Uploads with `raw-v2-polygon-evidence-2026-07-16` and `ic-v6-site-count-context-2026-07-16`; all files completed and 277 current IC history rows were restored with Raw Upload identities.
+  - Active normalized audit: 586 Raw Placemarks/classifications, 169 Sites, 183 Cameras, 202 Directions, 183 primary and 8 fallback Camera-to-Site relationships, 183 Camera Clusters, 165 Canonical Sites, 20 accepted Polygon scopes/memberships, 169 count decisions, 169 generation results, and 189 selected Camera locations.
+  - Active decision audit: 29 explicit counts, 99 historical modes, 41 insufficient-history reviews; 104 complete generations, 24 partial generations, and 41 count-review generations.
+  - Confirmed `CLtest` remains absent from Raw Upload and historical database records.
+  - Restored the local Python virtual environment, ran the complete 33-test suite without database mutations, and verified the backend health endpoint reports a connected database.
+- [x] Switched `pinned-map-reference-kml` from legacy `survey_history` output to the normalized Canonical Site generator:
+  - Parses read-only Site Points and valid KML Polygons from the uploaded request map.
+  - Excludes previously generated `camera_dir`/`camera_omni` Points and `reference cameras` Folders from Site Pin matching.
+  - Matches a Point to the nearest Canonical Site using all member Site observations within the configured 75-metre radius.
+  - Matches a Polygon to every Canonical Site with at least one member Site Point inside or on its boundary, including Polygon holes.
+  - Applies request Description Camera counts first, then Canonical historical mode, then historical explicit-count mode; missing evidence remains review-required.
+  - Builds candidates from all Canonical member relationships and task-compatible nearby Camera Clusters, then applies strict primary/fallback/nearby selection.
+  - Emits Site status/count provenance in a `Sites` Folder and globally unique Camera Clusters in a `Camera Locations` Folder; one shared Cluster lists every covered Site instead of creating duplicate Camera Placemarks.
+  - Returns request Pin, Polygon, matched Canonical Site, Camera, and unmatched-item counts as response headers.
+  - Live fixture verification: 5 Site Points parsed, 2 generated Camera Points excluded, 1 unbound Polygon reported, 3 Canonical Sites matched, and 2 unique Cameras returned; Raw Upload count remained 9 and `CLtest` remained absent from history.
+- [x] Expanded the complete side-effect-free test suite to 37 passing tests, including request parsing, request-time count priority, shared-Cluster KML de-duplication, and live normalized generation queries.
+- [x] Added selected historical Camera Direction Lines to normalized request output:
+  - Looks for a selected automatic or human-confirmed Direction binding across every observation in the selected Camera Location Cluster.
+  - Prefers human-confirmed evidence, then binding confidence and anchor distance, while emitting at most one Direction Line per de-duplicated Camera Cluster.
+  - Preserves the selected historical LineString positions and source order, including source altitude when present; no line is synthesized from a bearing.
+  - Includes the advisory centre bearing and coverage angle as reviewable metadata and states that field installation may adjust the direction.
+  - Omits Direction geometry when the selected Camera Cluster has no confirmed binding.
+- [x] Added normalized Site review-state visuals:
+  - Complete Sites use a green marker, partial Sites use a yellow marker, and Sites requiring review use a red marker.
+  - Camera locations remain globally de-duplicated and Direction Lines are grouped separately from Camera Point geometry.
+- [x] Verified live IC10 generation selects two historical Camera Clusters and returns one preserved three-point Direction Line for each, with advisory bearing and coverage metadata.
+- [x] Expanded the side-effect-free regression suite to 39 passing tests, including exact Direction Line coordinate output and all three Site review-state styles.
+- [x] Added versioned explainable Camera candidate weighting within strict evidence tiers:
+  - Preserves the non-negotiable `primary`, `fallback`, then `nearby_historical` ordering and gives human-confirmed evidence precedence within a tier.
+  - Ranks remaining same-tier candidates using relationship confidence at 70%, proximity at 25%, and repeated historical Camera Cluster support at 5%.
+  - Stores the ranking score, method, English reasons, input confidence, distance, historical support count, source relationship, and representative Camera observation for every selected location.
+  - Emits per-Site ranking scores, methods, and reasons in normalized KML Camera metadata without modifying the uploaded request KML or historical source evidence.
+  - Advances generated result provenance to `camera-generation-v2-weighted-2026-07-16`; raw evidence and previous versioned generated results remain unchanged.
+- [x] Applied the additive scoring schema and rebuilt current v2 derived results: 169 Site generation results and 189 Camera selections with scores from 0.448563 to 0.945223.
+- [x] Compared v1 and v2 output on the current historical corpus: no ranked Camera selection changed, confirming the new explainability layer preserves current behavior on known data.
+- [x] Closed request-output provenance to the exact winning source relationship when one Camera Cluster has multiple same-tier evidence rows.
+- [x] Expanded the side-effect-free regression suite to 42 passing tests, including weighted same-tier ranking, human-confirmed precedence, and exact winning-relationship provenance.
+- [x] Live request verification returned two Camera locations with `weighted_evidence_v1` scores and English ranking reasons, retained two historical Direction Lines, and left the database at 9 historical Raw Uploads with no `CLtest` history.
+- [x] Improved the Extension historical Layer review contract:
+  - Preserves the complete uploaded KML as immutable Raw Upload evidence while allowing only selected Layers to produce normalized Classification, Site, Camera, Direction, Polygon, Canonical Site, and generated-result evidence.
+  - Stores selected and excluded Layer paths, selected family, reviewer, and review time in `raw_upload_layer_reviews`; future rebuilds reuse the saved review scope.
+  - Adds stable preview file identities so same-named Layers in different uploaded files can be selected and classified independently.
+  - Rejects ambiguous requests from an outdated Extension instead of silently applying one Layer decision to multiple files.
+  - Applies reviewed IC, OD, IP OD, HIK, Site, or Other guidance with classification provenance while retaining explicit Camera identities inside a Site Layer.
+  - Reconciles stale rule-generated classifications when a previously imported Layer is later excluded, while preserving immutable Raw Placemarks and protected human decisions.
+- [x] Expanded upload preview evidence beyond legacy Points:
+  - Shows total Placemarks, geometry types, sample names, and rule-inferred business-role counts for every Layer, including LineString-only and Polygon evidence.
+  - Allows reviewed non-Point Layers to be imported even when they contain no legacy Point rows.
+  - Reports reviewed normalized Placemark counts separately from backward-compatible legacy Point inserts.
+- [x] Advanced the Extension manifest to version 1.1.0 and added IP OD as a review classification.
+- [x] Live preview verification on a historical survey file reported 51 Placemarks and 48 Point records across four Layers; no upload confirmation occurred and database history remained unchanged.
+- [x] Expanded the side-effect-free regression suite to 48 passing tests, including reviewed Layer filtering, task-family provenance, explicit Camera preservation, same-name multi-file isolation, ambiguous legacy rejection, and non-Point preview coverage.
+- [x] Rendered the improved 380-pixel Extension review panel with representative long Layer names and role/geometry summaries:
+  - Confirmed no horizontal overflow or overlap between Layer information, count, and classification controls.
+  - Confirmed checkbox interaction updates the selected visual state and produced no browser console errors or warnings.
+- [x] Added frequency-based historical Site layout selection:
+  - Gives one layout vote per project, with the latest upload replacing older revisions from the same project.
+  - Selects the most frequently observed non-empty layout as the stable base layout and retains other historical Camera locations as supplemental evidence.
+  - Keeps Sites without Camera locations as valid Site evidence without treating an empty observation as a vote to erase an existing layout.
+  - Preserves strict primary, fallback, and nearby evidence tiers before layout frequency affects same-tier ranking.
+- [x] Limited request Polygon generation to one historical Site for the MVP:
+  - Selects the contained Canonical Site nearest the Polygon centroid while preserving all contained Sites for a later multi-Site release.
+  - Generates the selected Site even when no Camera location is available and reports the missing location for review.
+- [x] Added Extension generation quality feedback:
+  - Reports processed, complete, partial, review-required, and unmatched Site counts.
+  - Reports unique Camera locations and unique output locations used as supplemental historical evidence.
+  - Allows a matched Site with zero Camera locations to be downloaded and reviewed instead of discarding the generated result.
+- [x] Made local database startup non-destructive and repeatable:
+  - Added a focused `scripts/db.sh` interface for starting, stopping, and checking the existing PostGIS container.
+  - Reuses the current database volume and creates a named persistent volume only when no container exists.
+  - Removed automatic schema application and sample Melbourne inserts from daily startup.
+  - Keeps schema migration, backup, restore, and rebuild as separately confirmed maintenance actions.
+- [x] Replaced the legacy README with the current normalized MVP architecture, workflows, local setup, database controls, API contract, authentication boundary, and verification steps.
+- [x] Completed the MVP foundation internal validation:
+  - Passed 54 side-effect-free regression tests, Python compilation, Extension JavaScript syntax, shell syntax, repository whitespace, and English-only artifact checks.
+  - Built the full PostGIS schema in a disposable database and confirmed database-level Raw Upload hash uniqueness rejects duplicate direct writes.
+  - Completed preview, reviewed historical import, and generated-KMZ requests against the disposable database before deleting it.
+  - Confirmed 35 Sites with no historical Camera locations remain in generated output with 14 partial and 21 review-required results instead of being discarded.
+  - Rendered the Extension at its 380-pixel popup width with the seven-line quality summary, no horizontal overflow, responsive input interaction, and no relevant console errors.
+  - Successfully exercised database stop, start, readiness, and status commands against the existing persistent container.
+- [x] Added missing Camera icon recovery from historical Direction Lines:
+  - When a standard three-point Camera Direction has no Camera Point within 4 metres in the same source Folder, Point 2 becomes a derived Camera Location.
+  - Preserves the original LineString and records `location_method=direction_point_2`; source Camera Points retain `location_method=source_point`.
+  - Creates an automatic zero-distance Direction binding so generated KML emits the normal Camera icon and the preserved historical direction.
+  - Keeps Coverage Polygons as Site scope evidence instead of incorrectly converting Polygon centroids into Camera locations.
+- [x] Added ATC historical evidence support:
+  - Classifies ATC Points as `atc_location` and ATC LineStrings as `atc_tube_line` under the independent `atc` task family.
+  - Adds ATC to Extension Layer review and database validation while preserving raw geometry and classification provenance.
+  - Makes ATC incompatible with Camera task evidence so it cannot affect Camera-Site matching, Camera counts, or generated Camera results.
+- [x] Migrated and rebuilt the active database for ATC and derived Camera provenance:
+  - Created `/tmp/surveyspots_pre_atc_direction_20260717.dump` inside the PostGIS container before migration.
+  - Rebuilt all 9 confirmed Raw Uploads under `rules-v2-atc-context-2026-07-17` and `observations-v2-direction-derived-camera-2026-07-17` without importing any newly added test fixture.
+  - Retained 586 current classifications, 183 current Camera observations, 202 current Direction observations, and 165 Canonical Sites; the existing 9-file corpus contains no missing-icon derived Camera.
+- [x] Completed disposable-database ATC and missing-icon Camera validation:
+  - Previewed an ATC traffic-count survey file as one ATC logger and two ATC tube lines with the Layer inferred as ATC.
+  - Imported only the reviewed ATC Layer and confirmed it remained outside Camera observations, relationships, and clusters.
+  - Imported a bicycle-count survey file and produced four Point 2 Camera observations, four primary Site relationships, and four Camera clusters.
+  - Generated a KMZ with four complete Sites, four Camera icons, four preserved Direction Lines, and zero unmatched Sites.
+  - Deleted the disposable database and generated test KMZ after verification.
+- [x] Added multi-tag historical Layer review:
+  - Keeps the existing single task-family selection for IC, OD, IP OD, HIK, ATC, Site, or Other.
+  - Adds independent data tags for Site, Camera, Direction, Polygon, Route, and ATC so mixed Layers can be reviewed accurately.
+  - Stores `review_tags` in `raw_upload_layer_reviews` and carries them into classification provenance.
+  - Uses unambiguous single data tags as role hints, such as Camera-only Point Layers or Direction-only LineString Layers, while preserving mixed-Layer rule classification.
+  - Updates the Extension review panel to auto-suggest data tags from previewed business-role counts and lets reviewers adjust tags before confirming import.
+  - Verified a mixed-Layer intersection survey file preview shows the IC Layer as mixed Site, Camera, Direction, and Polygon evidence without writing historical data.
+- [x] Removed obsolete Extension coordinate-reference workflow:
+  - Removed the Location panel, manual coordinate entry, and Download Reference KML button from the popup.
+  - Removed popup and background service-worker code for Google Maps URL coordinate extraction and coordinate-based KML download.
+  - Removed the user-facing Reference review tag while keeping internal low-confidence `reference_point` classification for rule diagnostics.
+  - Reduced Extension permissions by removing the `tabs` permission and Google Maps host permissions.
+- [x] Preserved reviewed Camera-only task Layers as supplemental historical evidence:
+  - Prevents Camera Points from reviewed Camera/Direction-only Layers without Site tags, such as a QL Layer, from being promoted to automatic spatial primary Site relationships.
+  - Keeps those Camera observations and Camera Location Clusters available to the generator through the existing `nearby_historical` evidence tier.
+  - Leaves generic Camera Locations or Camera Positions Layers eligible for nearest compatible Site association.
+  - Adds `layer_without_site_context` review provenance so reviewers can see why a nearby Camera was retained as supplemental evidence instead of primary layout evidence.
+  - Verified a mixed-Layer intersection survey file with reviewed `IC` and `QL` tags: QL Cameras produced zero primary relationships and remained available as reviewable supplemental evidence.
+- [x] Added multi-Camera quantity inference for historical Camera markers:
+  - Treats marker names and descriptions such as `Cam 4 & 5`, `EB Cam 1 & 2`, `1 Hik + 1 IPOD`, and `2 cameras` as count evidence for historical Site layout voting.
+  - Uses selected Direction Line count as supporting evidence when one Camera marker has multiple bound Direction Lines.
+  - Keeps the inferred quantity as a count signal only, without duplicating a single real historical coordinate into artificial output coordinates.
+  - Feeds the inferred quantity into explicit-first, historical-mode Camera count decisions so complex mixed Layers can require two Cameras even when they use one shared Camera Location marker.
+  - Lets generation completeness use represented Camera coverage while still writing each de-duplicated Camera Location Cluster only once.
+  - Added regression coverage for quantity parsing and historical count selection using inferred primary Camera quantity.
+- [x] Tightened unnamed Camera-to-Site spatial association:
+  - Reduces automatic nearest task-compatible Site association from 250 metres to 100 metres when the Camera name has no explicit Site, Station, or IC reference.
+  - Keeps Cameras outside 100 metres as review items instead of promoting them to primary Site relationships.
+  - Applies the same 100 metre limit to the legacy KML parser's nearest Site assignment path.
+  - Added regression coverage so an unnamed Camera about 150 metres from the nearest Site requires review.
+- [x] Added semantic OD Station association and explicit count conflict handling:
+  - Allows unnamed OD Camera markers between 100 and 250 metres to associate with the nearest OD Station only when marker colour matches and the nearest Station is clearly separated from the next candidate.
+  - Keeps ambiguous extended-distance Station candidates as review items instead of forcing a primary relationship.
+  - Uses the larger primary Camera evidence count when explicit Site description count is lower than the named primary Camera evidence.
+  - Records explicit-description versus primary-evidence count conflicts in decision provenance while automatically generating from the larger named-primary count.
+- [x] Added the first manual review handoff UI:
+  - Adds an API to list reviewable Camera-Site and Camera-count conflict items for a committed historical upload.
+  - Generates a review KML overlay using stable labels such as `REVIEW C-001 | Camera Name` so duplicate Camera names can be matched between My Maps and the Extension.
+  - Shows a compact Extension review panel after historical import when review items exist.
+  - Displays task family, candidate Site, relationship role, and Ignore controls with rule-generated defaults for each review item.
+  - Adds per-upload Review KML download buttons without modifying the original uploaded KML evidence.
+- [x] Completed the manual review persistence chain:
+  - Saves Extension review decisions as human-confirmed Camera-Site relationships or human-dismissed review items.
+  - Rebuilds count decisions and generation results after review submission so confirmed decisions affect future generation.
+  - Preserves original Camera coordinates, icon image, and icon colour in the review KML overlay while only changing the review Placemark name.
+  - Keeps stale-description versus named-primary Camera count conflicts automatic instead of showing them as manual review items.
+- [x] Standardized processed KMZ output styling:
+  - Replaces the bundled custom Camera icon with the My Maps stock icon from the supplied CLtest sample.
+  - Uses the black palette colour from the supplied My Maps colour palette for generated Camera icons.
+  - Keeps generated Camera coordinates on the selected historical Camera Location Cluster.
+  - Standardizes generated Direction Lines to yellow with width 2.0.
+  - Normalizes three-point Direction Line output so both boundary rays have the same length as the shorter historical side while preserving the original directions.
+  - Emits generated Camera icons with My Maps-compatible normal/highlight StyleMaps so imported KMZ output preserves the expected stock icon behaviour.
+  - Removes Site placemarks from processed Camera KMZ output until the future Polygon-to-Site generation workflow is implemented.
+  - Switches generated Camera placemarks from the blank My Maps marker to the My Maps stock camera icon and increases Direction Line width to 3.0.
+  - Uses the supplied My Maps `icon-1535-000000-nodesc` camera StyleMap for generated Camera placemarks, preserving the My Maps camera icon identifier instead of relying only on the shared blank marker image URL.
+- [x] Updated historical Camera count tie-breaking:
+  - Resolves equal-frequency historical Camera count modes by selecting the larger Camera count.
+  - Applies the same larger-count tie-break in both historical count decision rebuilding and processed KMZ generation.
+  - Keeps single historical layouts eligible as count evidence when they have primary Camera relationships.
+- [x] Added nearby Canonical Site layout fallback for request generation:
+  - When a matched request Site has insufficient Camera count history, the generator now checks task-compatible Canonical Sites within 50 metres.
+  - Uses nearby Canonical Site historical count decisions and primary Camera layouts as supplemental evidence for the requested Site.
+  - Falls back to a default requested Camera count of 2 only when no explicit, historical, or nearby Canonical count evidence is available.
+  - Keeps the fallback evidence reviewable by marking borrowed layout Cameras as nearby historical supplemental selections instead of rewriting raw historical relationships.
+- [x] Simplified processed Camera output for field usability:
+  - Names generated Camera placemarks from the request Site name and selected Camera rank, such as `IC 7 Cam 1`.
+  - Keeps generated Camera descriptions short so users focus on location review instead of algorithm evidence.
+  - Preserves request Site icon colour during request parsing and applies per-Site generated Camera colours only when the request contains multiple Site colours.
+  - Keeps the default generated Camera style black when all request Sites use the same colour.
+- [x] Added automatic task-family matching for generation requests:
+  - Infers IC, OD, IP OD, HIK, or ATC intent from the uploaded My Maps folder/layer name, Placemark name, and description.
+  - Uses the inferred request task family when matching user Site Points to Canonical Sites and nearby fallback Camera evidence.
+  - Treats OD and IP OD as compatible Camera evidence while keeping IC, HIK, and ATC evidence separated.
+  - Keeps generation target selection automatic so users express intent through standard map naming instead of an extra Extension selector.

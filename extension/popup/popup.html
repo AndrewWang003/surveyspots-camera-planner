@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Survey Assistant</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <h1 class="header__title">Survey Assistant</h1>
+    <p class="header__subtitle">Traffic Camera Deployment Tool</p>
+  </header>
+
+  <main class="main">
+    <!-- Auth Section -->
+    <section class="card auth-section" id="auth-section">
+      <div class="auth-authenticated" id="auth-authenticated" hidden>
+        <div class="auth-user">
+          <span class="auth-icon" id="auth-icon">✅</span>
+          <span class="auth-email" id="auth-email"></span>
+        </div>
+        <button class="auth-signout" id="btn-signout" type="button">Sign out</button>
+      </div>
+      <div class="auth-unauthorized" id="auth-unauthorized" hidden>
+        <div class="auth-user">
+          <span class="auth-icon">❌</span>
+          <span class="auth-email" id="auth-email-unauth"></span>
+        </div>
+        <p class="auth-error-msg">Unauthorized domain</p>
+      </div>
+      <button class="btn btn-google" id="btn-signin" type="button">
+        <svg class="google-icon" viewBox="0 0 24 24" width="18" height="18">
+          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z"/>
+          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+        </svg>
+        Sign in with Google
+      </button>
+    </section>
+
+    <!-- Action Buttons -->
+    <section class="actions-section">
+      <button class="btn btn-pinned-upload" id="btn-upload-pinned-map" type="button" disabled>
+        📍 Upload Pinned Site Map
+      </button>
+      <button class="btn btn-download-processed" id="btn-download-processed-map" type="button" disabled>
+        ⬇ Download Processed KMZ
+      </button>
+      <button class="btn btn-upload" id="btn-upload" type="button" disabled>
+        📤 Upload History KML
+      </button>
+      <input type="file" id="pinned-map-input" accept=".kml,.kmz" hidden>
+      <input type="file" id="file-input" accept=".kml,.kmz" multiple hidden>
+      <p class="file-info" id="file-info" hidden></p>
+    </section>
+
+    <section class="generation-summary" id="generation-summary" aria-live="polite" hidden>
+      <h2 class="generation-summary__title">Generation Summary</h2>
+      <dl class="generation-summary__grid">
+        <dt>Sites processed</dt><dd id="summary-site-count">0</dd>
+        <dt>Complete</dt><dd id="summary-complete-count">0</dd>
+        <dt>Partial</dt><dd id="summary-partial-count">0</dd>
+        <dt>Requires review</dt><dd id="summary-review-count">0</dd>
+        <dt>Camera locations</dt><dd id="summary-camera-count">0</dd>
+        <dt>Supplemental historical</dt><dd id="summary-supplemental-count">0</dd>
+        <dt>Unmatched Sites</dt><dd id="summary-unmatched-count">0</dd>
+      </dl>
+    </section>
+
+    <!-- Layer Review Panel -->
+    <section class="card layer-review" id="layer-review" hidden>
+      <div class="layer-review__header">
+        <h2 class="layer-review__title">📋 Review Detected Layers</h2>
+        <p class="layer-review__subtitle" id="layer-review-subtitle">Review detected historical Layers.</p>
+      </div>
+      <div class="layer-review__list" id="layer-review-list">
+        <!-- Dynamically populated -->
+      </div>
+      <div class="layer-review__actions">
+        <button class="btn btn-confirm" id="btn-confirm-upload" type="button">✅ Confirm Import</button>
+        <button class="btn btn-cancel-review" id="btn-cancel-upload" type="button">Cancel</button>
+      </div>
+    </section>
+
+    <section class="card manual-review" id="manual-review" hidden>
+      <div class="manual-review__header">
+        <h2 class="manual-review__title">Review Required</h2>
+        <p class="manual-review__subtitle" id="manual-review-subtitle">Resolve ambiguous historical Camera evidence.</p>
+      </div>
+      <div class="manual-review__actions" id="manual-review-actions"></div>
+      <div class="manual-review__list" id="manual-review-list"></div>
+      <button class="btn btn-confirm btn-submit-review" id="btn-submit-review" type="button">Submit Review</button>
+    </section>
+
+    <!-- Status Message -->
+    <div class="status-message" id="status-message" role="status" aria-live="polite" hidden></div>
+  </main>
+
+  <!-- Loading Overlay -->
+  <div class="loading-overlay" id="loading-overlay" hidden>
+    <div class="spinner"></div>
+  </div>
+
+  <script src="../config.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

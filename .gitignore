@@ -1,0 +1,53 @@
+# ===== Environment & Secrets =====
+.env
+.env.local
+.env.production
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+
+# ===== Data (never push to remote) =====
+data/
+*.kml
+*.kmz
+!backend/sql/*.sql
+
+# ===== IDE =====
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+
+# ===== Node (if any tooling added later) =====
+node_modules/
+package-lock.json
+
+# ===== Logs =====
+*.log
+logs/
+
+# ===== Chrome Extension Build =====
+*.crx
+*.pem
+*.zip
+
+# ===== Private survey data (never publish) =====
+testdata/
+testfixtures/
+analysis/
+ai_handoff/

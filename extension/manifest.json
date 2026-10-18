@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "Smart Traffic Survey Assistant",
+  "version": "1.1.0",
+  "description": "Upload survey maps and generate camera deployment suggestions",
+  "icons": {
+    "16": "icon/generated/icon16.png",
+    "32": "icon/generated/icon32.png",
+    "48": "icon/generated/icon48.png",
+    "128": "icon/generated/icon128.png",
+    "256": "icon/generated/icon256.png",
+    "512": "icon/generated/icon512.png"
+  },
+  "permissions": [
+    "identity",
+    "storage",
+    "downloads"
+  ],
+  "host_permissions": [
+    "http://localhost:8000/*"
+  ],
+  "oauth2": {
+    "client_id": "YOUR_CLIENT_ID.apps.googleusercontent.com",
+    "scopes": [
+      "openid",
+      "email",
+      "profile"
+    ]
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Survey Assistant",
+    "default_icon": {
+      "16": "icon/generated/icon16.png",
+      "32": "icon/generated/icon32.png",
+      "48": "icon/generated/icon48.png",
+      "128": "icon/generated/icon128.png",
+      "256": "icon/generated/icon256.png",
+      "512": "icon/generated/icon512.png"
+    }
+  }
+}
