@@ -35,10 +35,11 @@ With SurveySpots, the planner only marks the sites. The tool looks up the histor
 6. **A person reviews messy input before it becomes history.** Old maps are named inconsistently (`IC`, `Cams`, `cam locations`, `Task 1- IC` ...). Each upload is previewed, and the user confirms which layers are historical evidence and what type they are. Nothing is written until that review is confirmed.
 7. **Keep raw evidence unchanged.** Uploaded files are stored byte-for-byte; everything derived from them is versioned and can be rebuilt when the parser improves. Human decisions are never overwritten by a rebuild.
 
-## What it does 
-Check this to watch the video: https://youtu.be/ticM1JTy1WY
+## What it does
 
+[![SurveySpots demo video](https://img.youtube.com/vi/ticM1JTy1WY/hqdefault.jpg)](https://youtu.be/ticM1JTy1WY)
 
+**[Watch the demo](https://youtu.be/ticM1JTy1WY)**: uploading a site map, then downloading the generated camera positions (steps 2 and 3 below).
 
 1. The planner marks the survey sites in Google My Maps (one layer per survey type) and exports the map.
 2. The extension uploads it. The backend matches each site to historical sites and selects camera positions by device type.
