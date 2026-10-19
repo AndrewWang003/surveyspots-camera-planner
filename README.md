@@ -64,7 +64,7 @@ In this public copy, 66 tests run and pass; 15 tests need the private survey cor
 
 ## Status
 
-Working MVP, used on real survey data. Not deployed for a team: authentication is still in local development mode.
+Working prototype, tested on real historical survey data. It has not been adopted or deployed by a team; authentication is still in local development mode.
 
 ## Licence
 
